@@ -551,17 +551,15 @@ class OllamaAPI:
                     async def stream_generator():
                         try:
                             first_chunk_time = None
-                            last_chunk_time = time.time_ns()
+                            last_chunk_time = start_time
                             total_response = ""
 
-                            # Ensure response is an async generator
                             if isinstance(response, str):
-                                # If it's a string, send in two parts
                                 first_chunk_time = start_time
                                 last_chunk_time = time.time_ns()
                                 total_response = response
 
-                                data = {
+                                chunk_payload = {
                                     "model": ollama_infos.LIGHTRAG_MODEL,
                                     "created_at": ollama_infos.LIGHTRAG_CREATED_AT,
                                     "message": {
@@ -571,16 +569,16 @@ class OllamaAPI:
                                     },
                                     "done": False,
                                 }
-                                yield f"{json.dumps(data, ensure_ascii=False)}\n"
+                                yield f"{json.dumps(chunk_payload, ensure_ascii=False)}\n"
 
                                 completion_tokens = estimate_tokens(total_response)
                                 total_time = last_chunk_time - start_time
                                 prompt_eval_time = first_chunk_time - start_time
                                 eval_time = last_chunk_time - first_chunk_time
 
-                data = {
-                    "model": ollama_infos.LIGHTRAG_MODEL,
-                    "created_at": ollama_infos.LIGHTRAG_CREATED_AT,
+                                final_payload = {
+                                    "model": ollama_infos.LIGHTRAG_MODEL,
+                                    "created_at": ollama_infos.LIGHTRAG_CREATED_AT,
                                     "message": {
                                         "role": "assistant",
                                         "content": "",
@@ -595,39 +593,38 @@ class OllamaAPI:
                                     "eval_count": completion_tokens,
                                     "eval_duration": eval_time,
                                 }
-                                yield f"{json.dumps(data, ensure_ascii=False)}\n"
+                                yield f"{json.dumps(final_payload, ensure_ascii=False)}\n"
                             else:
                                 try:
                                     async for chunk in response:
-                                        if chunk:
-                                            if first_chunk_time is None:
-                                                first_chunk_time = time.time_ns()
+                                        if not chunk:
+                                            continue
 
-                                            last_chunk_time = time.time_ns()
+                                        if first_chunk_time is None:
+                                            first_chunk_time = time.time_ns()
+                                        last_chunk_time = time.time_ns()
+                                        total_response += chunk
 
-                                            total_response += chunk
-                                            data = {
-                                    "model": ollama_infos.LIGHTRAG_MODEL,
-                                    "created_at": ollama_infos.LIGHTRAG_CREATED_AT,
-                                                "message": {
-                                                    "role": "assistant",
-                                                    "content": chunk,
-                                                    "images": None,
-                                                },
-                                                "done": False,
-                                            }
-                                            yield f"{json.dumps(data, ensure_ascii=False)}\n"
-                                except (asyncio.CancelledError, Exception) as e:
-                                    error_msg = str(e)
-                                    if isinstance(e, asyncio.CancelledError):
-                                        error_msg = "Stream was cancelled by server"
-                                    else:
-                                        error_msg = f"Provider error: {error_msg}"
-
+                                        chunk_payload = {
+                                            "model": ollama_infos.LIGHTRAG_MODEL,
+                                            "created_at": ollama_infos.LIGHTRAG_CREATED_AT,
+                                            "message": {
+                                                "role": "assistant",
+                                                "content": chunk,
+                                                "images": None,
+                                            },
+                                            "done": False,
+                                        }
+                                        yield f"{json.dumps(chunk_payload, ensure_ascii=False)}\n"
+                                except (asyncio.CancelledError, Exception) as exc:
+                                    error_msg = (
+                                        "Stream was cancelled by server"
+                                        if isinstance(exc, asyncio.CancelledError)
+                                        else f"Provider error: {exc}"
+                                    )
                                     logger.error(f"Stream error: {error_msg}")
 
-                                    # Send error message to client
-                                    error_data = {
+                                    error_payload = {
                                         "model": ollama_infos.LIGHTRAG_MODEL,
                                         "created_at": ollama_infos.LIGHTRAG_CREATED_AT,
                                         "message": {
@@ -638,10 +635,9 @@ class OllamaAPI:
                                         "error": f"\n\nError: {error_msg}",
                                         "done": False,
                                     }
-                                    yield f"{json.dumps(error_data, ensure_ascii=False)}\n"
+                                    yield f"{json.dumps(error_payload, ensure_ascii=False)}\n"
 
-                                    # Send final message to close the stream
-                                    final_data = {
+                                    final_payload = {
                                         "model": ollama_infos.LIGHTRAG_MODEL,
                                         "created_at": ollama_infos.LIGHTRAG_CREATED_AT,
                                         "message": {
@@ -651,7 +647,7 @@ class OllamaAPI:
                                         },
                                         "done": True,
                                     }
-                                    yield f"{json.dumps(final_data, ensure_ascii=False)}\n"
+                                    yield f"{json.dumps(final_payload, ensure_ascii=False)}\n"
                                     return
 
                                 if first_chunk_time is None:
@@ -661,7 +657,7 @@ class OllamaAPI:
                                 prompt_eval_time = first_chunk_time - start_time
                                 eval_time = last_chunk_time - first_chunk_time
 
-                                data = {
+                                final_payload = {
                                     "model": ollama_infos.LIGHTRAG_MODEL,
                                     "created_at": ollama_infos.LIGHTRAG_CREATED_AT,
                                     "message": {
@@ -678,10 +674,9 @@ class OllamaAPI:
                                     "eval_count": completion_tokens,
                                     "eval_duration": eval_time,
                                 }
-                                yield f"{json.dumps(data, ensure_ascii=False)}\n"
-
-                        except Exception as e:
-                            trace_exception(e)
+                                yield f"{json.dumps(final_payload, ensure_ascii=False)}\n"
+                        except Exception as exc:
+                            trace_exception(exc)
                             raise
 
                     return StreamingResponse(

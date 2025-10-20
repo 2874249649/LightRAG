@@ -4,10 +4,8 @@ import contextvars
 import logging
 import os
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
-import yaml
 from fastapi import HTTPException
 
 logger = logging.getLogger(__name__)
@@ -123,68 +121,13 @@ def _parse_workspace_ids(raw_ids: str) -> Iterable[str]:
             yield workspace_id
 
 
-def _load_from_yaml(path: Path) -> List[WorkspaceConfig]:
-    try:
-        data = yaml.safe_load(path.read_text())
-    except Exception as exc:  # noqa: BLE001
-        logger.error("Failed to read workspace config file %s: %s", path, exc)
-        return []
-
-    if not data:
-        return []
-
-    configs: List[WorkspaceConfig] = []
-    if isinstance(data, list):
-        items = data
-    elif isinstance(data, dict) and "workspaces" in data:
-        items = data["workspaces"]
-    else:
-        logger.warning(
-            "Unsupported workspaces.yaml structure. Expect list or {workspaces: [...]}"
-        )
-        return []
-
-    for item in items:
-        if not isinstance(item, dict):
-            logger.warning("Skip invalid workspace entry: %s", item)
-            continue
-
-        workspace_id = str(item.get("id", "")).strip()
-        if not workspace_id:
-            logger.warning("Skip workspace entry without id: %s", item)
-            continue
-
-        configs.append(
-            WorkspaceConfig(
-                id=workspace_id,
-                display_name=item.get("display_name"),
-                description=item.get("description"),
-                enabled=bool(item.get("enabled", True)),
-                metadata={
-                    k: v
-                    for k, v in item.items()
-                    if k
-                    not in {
-                        "id",
-                        "display_name",
-                        "description",
-                        "enabled",
-                    }
-                },
-            )
-        )
-
-    return configs
-
-
 def load_workspace_configs(args) -> List[WorkspaceConfig]:
     """
-    Derive workspace configurations from environment variables or config files.
+    Derive workspace configurations from environment variables.
 
     Priority:
         1. WORKSPACES environment variable (comma-separated ids)
-        2. rag_storage/workspaces.yaml file
-        3. Fallback to args.workspace / WORKSPACE env / 'default'
+        2. Fallback to args.workspace / WORKSPACE env / 'default'
     """
     configs: List[WorkspaceConfig] = []
 
@@ -199,11 +142,6 @@ def load_workspace_configs(args) -> List[WorkspaceConfig]:
                 "WORKSPACES is set but no valid workspace ids were parsed: %s",
                 env_value,
             )
-
-    if not configs:
-        yaml_path = Path(args.working_dir) / "workspaces.yaml"
-        if yaml_path.exists():
-            configs = _load_from_yaml(yaml_path)
 
     if not configs:
         fallback = args.workspace or os.getenv("WORKSPACE", "")
