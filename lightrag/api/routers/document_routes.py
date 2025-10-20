@@ -2760,6 +2760,7 @@ def create_document_routes(api_key: Optional[str] = None):
             HTTPException: If an error occurs while initiating reprocessing (500).
         """
         try:
+            rag, _ = _workspace_resources()
             # Generate track_id with "retry" prefix for retry operation
             track_id = generate_track_id("retry")
 
