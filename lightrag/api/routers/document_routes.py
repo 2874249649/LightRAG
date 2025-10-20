@@ -25,6 +25,7 @@ from lightrag import LightRAG
 from lightrag.base import DeletionResult, DocProcessingStatus, DocStatus
 from lightrag.utils import generate_track_id
 from lightrag.api.utils_api import get_combined_auth_dependency
+from lightrag.api.workspaces import get_current_workspace
 from ..config import global_args
 
 
@@ -1492,9 +1493,12 @@ async def background_delete_documents(
     from lightrag.kg.shared_storage import (
         get_namespace_data,
         get_pipeline_status_lock,
+        resolve_pipeline_namespace,
     )
 
-    pipeline_status = await get_namespace_data("pipeline_status")
+    pipeline_status = await get_namespace_data(
+        resolve_pipeline_namespace(rag.workspace)
+    )
     pipeline_status_lock = get_pipeline_status_lock()
 
     total_docs = len(doc_ids)
@@ -1704,11 +1708,13 @@ async def background_delete_documents(
                 logger.error(f"Error processing pending documents after deletion: {e}")
 
 
-def create_document_routes(
-    rag: LightRAG, doc_manager: DocumentManager, api_key: Optional[str] = None
-):
+def create_document_routes(api_key: Optional[str] = None):
     # Create combined auth dependency for document routes
     combined_auth = get_combined_auth_dependency(api_key)
+
+    def _workspace_resources() -> tuple[LightRAG, DocumentManager]:
+        ctx = get_current_workspace()
+        return ctx.rag, ctx.document_manager
 
     @router.post(
         "/scan", response_model=ScanResponse, dependencies=[Depends(combined_auth)]
@@ -1724,6 +1730,7 @@ def create_document_routes(
         Returns:
             ScanResponse: A response object containing the scanning status and track_id
         """
+        rag, doc_manager = _workspace_resources()
         # Generate track_id with "scan" prefix for scanning operation
         track_id = generate_track_id("scan")
 
@@ -1760,6 +1767,7 @@ def create_document_routes(
             HTTPException: If the file type is not supported (400) or other errors occur (500).
         """
         try:
+            rag, doc_manager = _workspace_resources()
             # Sanitize filename to prevent Path Traversal attacks
             safe_filename = sanitize_filename(file.filename, doc_manager.input_dir)
 
@@ -1831,6 +1839,7 @@ def create_document_routes(
             HTTPException: If an error occurs during text processing (500).
         """
         try:
+            rag, _ = _workspace_resources()
             # Check if file_source already exists in doc_status storage
             if (
                 request.file_source
@@ -1895,6 +1904,7 @@ def create_document_routes(
             HTTPException: If an error occurs during text processing (500).
         """
         try:
+            rag, _ = _workspace_resources()
             # Check if any file_sources already exist in doc_status storage
             if request.file_sources:
                 for file_source in request.file_sources:
@@ -1963,10 +1973,13 @@ def create_document_routes(
         from lightrag.kg.shared_storage import (
             get_namespace_data,
             get_pipeline_status_lock,
+            resolve_pipeline_namespace,
         )
 
+        rag, doc_manager = _workspace_resources()
+        pipeline_namespace_key = resolve_pipeline_namespace(rag.workspace)
         # Get pipeline status and lock
-        pipeline_status = await get_namespace_data("pipeline_status")
+        pipeline_status = await get_namespace_data(pipeline_namespace_key)
         pipeline_status_lock = get_pipeline_status_lock()
 
         # Check and set status with lock
@@ -2157,9 +2170,13 @@ def create_document_routes(
             from lightrag.kg.shared_storage import (
                 get_namespace_data,
                 get_all_update_flags_status,
+                resolve_pipeline_namespace,
             )
 
-            pipeline_status = await get_namespace_data("pipeline_status")
+            rag, _ = _workspace_resources()
+            pipeline_status = await get_namespace_data(
+                resolve_pipeline_namespace(rag.workspace)
+            )
 
             # Get update flags status for all namespaces
             update_status = await get_all_update_flags_status()
@@ -2240,6 +2257,7 @@ def create_document_routes(
             HTTPException: If an error occurs while retrieving document statuses (500).
         """
         try:
+            rag, _ = _workspace_resources()
             statuses = (
                 DocStatus.PENDING,
                 DocStatus.PROCESSING,
@@ -2362,6 +2380,7 @@ def create_document_routes(
             HTTPException:
               - 500: If an unexpected internal error occurs during initialization.
         """
+        rag, doc_manager = _workspace_resources()
         doc_ids = delete_request.doc_ids
 
         # The rag object is initialized from the server startup args,
@@ -2374,9 +2393,14 @@ def create_document_routes(
             )
 
         try:
-            from lightrag.kg.shared_storage import get_namespace_data
+            from lightrag.kg.shared_storage import (
+                get_namespace_data,
+                resolve_pipeline_namespace,
+            )
 
-            pipeline_status = await get_namespace_data("pipeline_status")
+            pipeline_status = await get_namespace_data(
+                resolve_pipeline_namespace(rag.workspace)
+            )
 
             # Check if pipeline is busy
             if pipeline_status.get("busy", False):
@@ -2429,6 +2453,7 @@ def create_document_routes(
             HTTPException: If an error occurs during cache clearing (500).
         """
         try:
+            rag, _ = _workspace_resources()
             # Call the aclear_cache method (no modes parameter)
             await rag.aclear_cache()
 
@@ -2460,6 +2485,7 @@ def create_document_routes(
             HTTPException: If the entity is not found (404) or an error occurs (500).
         """
         try:
+            rag, _ = _workspace_resources()
             result = await rag.adelete_by_entity(entity_name=request.entity_name)
             if result.status == "not_found":
                 raise HTTPException(status_code=404, detail=result.message)
@@ -2495,6 +2521,7 @@ def create_document_routes(
             HTTPException: If the relation is not found (404) or an error occurs (500).
         """
         try:
+            rag, _ = _workspace_resources()
             result = await rag.adelete_by_relation(
                 source_entity=request.source_entity,
                 target_entity=request.target_entity,
@@ -2539,6 +2566,7 @@ def create_document_routes(
             HTTPException: If track_id is invalid (400) or an error occurs (500).
         """
         try:
+            rag, _ = _workspace_resources()
             # Validate track_id
             if not track_id or not track_id.strip():
                 raise HTTPException(status_code=400, detail="Track ID cannot be empty")
@@ -2616,6 +2644,7 @@ def create_document_routes(
             HTTPException: If an error occurs while retrieving documents (500).
         """
         try:
+            rag, _ = _workspace_resources()
             # Get paginated documents and status counts in parallel
             docs_task = rag.doc_status.get_docs_paginated(
                 status_filter=request.status_filter,
@@ -2694,6 +2723,7 @@ def create_document_routes(
             HTTPException: If an error occurs while retrieving status counts (500).
         """
         try:
+            rag, _ = _workspace_resources()
             status_counts = await rag.doc_status.get_all_status_counts()
             return StatusCountsResponse(status_counts=status_counts)
 

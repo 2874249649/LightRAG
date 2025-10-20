@@ -12,6 +12,7 @@ from ascii_colors import trace_exception
 from lightrag import LightRAG, QueryParam
 from lightrag.utils import TiktokenTokenizer
 from lightrag.api.utils_api import get_combined_auth_dependency
+from lightrag.api.workspaces import get_current_workspace
 from fastapi import Depends
 
 
@@ -219,13 +220,20 @@ def parse_query_mode(query: str) -> tuple[str, SearchMode, bool, Optional[str]]:
 
 
 class OllamaAPI:
-    def __init__(self, rag: LightRAG, top_k: int = 60, api_key: Optional[str] = None):
-        self.rag = rag
-        self.ollama_server_infos = rag.ollama_server_infos
+    def __init__(self, top_k: int = 60, api_key: Optional[str] = None):
         self.top_k = top_k
         self.api_key = api_key
         self.router = APIRouter(tags=["ollama"])
         self.setup_routes()
+
+    def _rag(self) -> LightRAG:
+        ctx = get_current_workspace()
+        if ctx.rag is None:
+            raise HTTPException(status_code=503, detail="Workspace is unavailable")
+        return ctx.rag
+
+    def _ollama_infos(self):
+        return self._rag().ollama_server_infos
 
     def setup_routes(self):
         # Create combined auth dependency for Ollama API routes
@@ -239,19 +247,20 @@ class OllamaAPI:
         @self.router.get("/tags", dependencies=[Depends(combined_auth)])
         async def get_tags():
             """Return available models acting as an Ollama server"""
+            ollama_infos = self._ollama_infos()
             return OllamaTagResponse(
                 models=[
                     {
-                        "name": self.ollama_server_infos.LIGHTRAG_MODEL,
-                        "model": self.ollama_server_infos.LIGHTRAG_MODEL,
-                        "modified_at": self.ollama_server_infos.LIGHTRAG_CREATED_AT,
-                        "size": self.ollama_server_infos.LIGHTRAG_SIZE,
-                        "digest": self.ollama_server_infos.LIGHTRAG_DIGEST,
+                        "name": ollama_infos.LIGHTRAG_MODEL,
+                        "model": ollama_infos.LIGHTRAG_MODEL,
+                        "modified_at": ollama_infos.LIGHTRAG_CREATED_AT,
+                        "size": ollama_infos.LIGHTRAG_SIZE,
+                        "digest": ollama_infos.LIGHTRAG_DIGEST,
                         "details": {
                             "parent_model": "",
                             "format": "gguf",
-                            "family": self.ollama_server_infos.LIGHTRAG_NAME,
-                            "families": [self.ollama_server_infos.LIGHTRAG_NAME],
+                            "family": ollama_infos.LIGHTRAG_NAME,
+                            "families": [ollama_infos.LIGHTRAG_NAME],
                             "parameter_size": "13B",
                             "quantization_level": "Q4_0",
                         },
@@ -262,13 +271,14 @@ class OllamaAPI:
         @self.router.get("/ps", dependencies=[Depends(combined_auth)])
         async def get_running_models():
             """List Running Models - returns currently running models"""
+            ollama_infos = self._ollama_infos()
             return OllamaPsResponse(
                 models=[
                     {
-                        "name": self.ollama_server_infos.LIGHTRAG_MODEL,
-                        "model": self.ollama_server_infos.LIGHTRAG_MODEL,
-                        "size": self.ollama_server_infos.LIGHTRAG_SIZE,
-                        "digest": self.ollama_server_infos.LIGHTRAG_DIGEST,
+                        "name": ollama_infos.LIGHTRAG_MODEL,
+                        "model": ollama_infos.LIGHTRAG_MODEL,
+                        "size": ollama_infos.LIGHTRAG_SIZE,
+                        "digest": ollama_infos.LIGHTRAG_DIGEST,
                         "details": {
                             "parent_model": "",
                             "format": "gguf",
@@ -278,7 +288,7 @@ class OllamaAPI:
                             "quantization_level": "Q4_0",
                         },
                         "expires_at": "2050-12-31T14:38:31.83753-07:00",
-                        "size_vram": self.ollama_server_infos.LIGHTRAG_SIZE,
+                        "size_vram": ollama_infos.LIGHTRAG_SIZE,
                     }
                 ]
             )
@@ -299,13 +309,15 @@ class OllamaAPI:
                 query = request.prompt
                 start_time = time.time_ns()
                 prompt_tokens = estimate_tokens(query)
+                rag = self._rag()
+                ollama_infos = self._ollama_infos()
 
                 if request.system:
-                    self.rag.llm_model_kwargs["system_prompt"] = request.system
+                    rag.llm_model_kwargs["system_prompt"] = request.system
 
                 if request.stream:
-                    response = await self.rag.llm_model_func(
-                        query, stream=True, **self.rag.llm_model_kwargs
+                    response = await rag.llm_model_func(
+                        query, stream=True, **rag.llm_model_kwargs
                     )
 
                     async def stream_generator():
@@ -322,8 +334,8 @@ class OllamaAPI:
                                 total_response = response
 
                                 data = {
-                                    "model": self.ollama_server_infos.LIGHTRAG_MODEL,
-                                    "created_at": self.ollama_server_infos.LIGHTRAG_CREATED_AT,
+                                    "model": ollama_infos.LIGHTRAG_MODEL,
+                                    "created_at": ollama_infos.LIGHTRAG_CREATED_AT,
                                     "response": response,
                                     "done": False,
                                 }
@@ -335,8 +347,8 @@ class OllamaAPI:
                                 eval_time = last_chunk_time - first_chunk_time
 
                                 data = {
-                                    "model": self.ollama_server_infos.LIGHTRAG_MODEL,
-                                    "created_at": self.ollama_server_infos.LIGHTRAG_CREATED_AT,
+                                    "model": ollama_infos.LIGHTRAG_MODEL,
+                                    "created_at": ollama_infos.LIGHTRAG_CREATED_AT,
                                     "response": "",
                                     "done": True,
                                     "done_reason": "stop",
@@ -360,8 +372,8 @@ class OllamaAPI:
 
                                             total_response += chunk
                                             data = {
-                                                "model": self.ollama_server_infos.LIGHTRAG_MODEL,
-                                                "created_at": self.ollama_server_infos.LIGHTRAG_CREATED_AT,
+                                                "model": ollama_infos.LIGHTRAG_MODEL,
+                                                "created_at": ollama_infos.LIGHTRAG_CREATED_AT,
                                                 "response": chunk,
                                                 "done": False,
                                             }
@@ -377,8 +389,8 @@ class OllamaAPI:
 
                                     # Send error message to client
                                     error_data = {
-                                        "model": self.ollama_server_infos.LIGHTRAG_MODEL,
-                                        "created_at": self.ollama_server_infos.LIGHTRAG_CREATED_AT,
+                                        "model": ollama_infos.LIGHTRAG_MODEL,
+                                        "created_at": ollama_infos.LIGHTRAG_CREATED_AT,
                                         "response": f"\n\nError: {error_msg}",
                                         "error": f"\n\nError: {error_msg}",
                                         "done": False,
@@ -387,8 +399,8 @@ class OllamaAPI:
 
                                     # Send final message to close the stream
                                     final_data = {
-                                        "model": self.ollama_server_infos.LIGHTRAG_MODEL,
-                                        "created_at": self.ollama_server_infos.LIGHTRAG_CREATED_AT,
+                                        "model": ollama_infos.LIGHTRAG_MODEL,
+                                        "created_at": ollama_infos.LIGHTRAG_CREATED_AT,
                                         "response": "",
                                         "done": True,
                                     }
@@ -402,8 +414,8 @@ class OllamaAPI:
                                 eval_time = last_chunk_time - first_chunk_time
 
                                 data = {
-                                    "model": self.ollama_server_infos.LIGHTRAG_MODEL,
-                                    "created_at": self.ollama_server_infos.LIGHTRAG_CREATED_AT,
+                                    "model": ollama_infos.LIGHTRAG_MODEL,
+                                    "created_at": ollama_infos.LIGHTRAG_CREATED_AT,
                                     "response": "",
                                     "done": True,
                                     "done_reason": "stop",
@@ -434,8 +446,8 @@ class OllamaAPI:
                     )
                 else:
                     first_chunk_time = time.time_ns()
-                    response_text = await self.rag.llm_model_func(
-                        query, stream=False, **self.rag.llm_model_kwargs
+                    response_text = await rag.llm_model_func(
+                        query, stream=False, **rag.llm_model_kwargs
                     )
                     last_chunk_time = time.time_ns()
 
@@ -448,8 +460,8 @@ class OllamaAPI:
                     eval_time = last_chunk_time - first_chunk_time
 
                     return {
-                        "model": self.ollama_server_infos.LIGHTRAG_MODEL,
-                        "created_at": self.ollama_server_infos.LIGHTRAG_CREATED_AT,
+                        "model": ollama_infos.LIGHTRAG_MODEL,
+                        "created_at": ollama_infos.LIGHTRAG_CREATED_AT,
                         "response": str(response_text),
                         "done": True,
                         "done_reason": "stop",
@@ -503,6 +515,8 @@ class OllamaAPI:
 
                 start_time = time.time_ns()
                 prompt_tokens = estimate_tokens(cleaned_query)
+                rag = self._rag()
+                ollama_infos = self._ollama_infos()
 
                 param_dict = {
                     "mode": mode.value,
@@ -522,15 +536,15 @@ class OllamaAPI:
                     # Determine if the request is prefix with "/bypass"
                     if mode == SearchMode.bypass:
                         if request.system:
-                            self.rag.llm_model_kwargs["system_prompt"] = request.system
-                        response = await self.rag.llm_model_func(
+                            rag.llm_model_kwargs["system_prompt"] = request.system
+                        response = await rag.llm_model_func(
                             cleaned_query,
                             stream=True,
                             history_messages=conversation_history,
-                            **self.rag.llm_model_kwargs,
+                            **rag.llm_model_kwargs,
                         )
                     else:
-                        response = await self.rag.aquery(
+                        response = await rag.aquery(
                             cleaned_query, param=query_param
                         )
 
@@ -548,8 +562,8 @@ class OllamaAPI:
                                 total_response = response
 
                                 data = {
-                                    "model": self.ollama_server_infos.LIGHTRAG_MODEL,
-                                    "created_at": self.ollama_server_infos.LIGHTRAG_CREATED_AT,
+                                    "model": ollama_infos.LIGHTRAG_MODEL,
+                                    "created_at": ollama_infos.LIGHTRAG_CREATED_AT,
                                     "message": {
                                         "role": "assistant",
                                         "content": response,
@@ -564,9 +578,9 @@ class OllamaAPI:
                                 prompt_eval_time = first_chunk_time - start_time
                                 eval_time = last_chunk_time - first_chunk_time
 
-                                data = {
-                                    "model": self.ollama_server_infos.LIGHTRAG_MODEL,
-                                    "created_at": self.ollama_server_infos.LIGHTRAG_CREATED_AT,
+                data = {
+                    "model": ollama_infos.LIGHTRAG_MODEL,
+                    "created_at": ollama_infos.LIGHTRAG_CREATED_AT,
                                     "message": {
                                         "role": "assistant",
                                         "content": "",
@@ -593,8 +607,8 @@ class OllamaAPI:
 
                                             total_response += chunk
                                             data = {
-                                                "model": self.ollama_server_infos.LIGHTRAG_MODEL,
-                                                "created_at": self.ollama_server_infos.LIGHTRAG_CREATED_AT,
+                                    "model": ollama_infos.LIGHTRAG_MODEL,
+                                    "created_at": ollama_infos.LIGHTRAG_CREATED_AT,
                                                 "message": {
                                                     "role": "assistant",
                                                     "content": chunk,
@@ -614,8 +628,8 @@ class OllamaAPI:
 
                                     # Send error message to client
                                     error_data = {
-                                        "model": self.ollama_server_infos.LIGHTRAG_MODEL,
-                                        "created_at": self.ollama_server_infos.LIGHTRAG_CREATED_AT,
+                                        "model": ollama_infos.LIGHTRAG_MODEL,
+                                        "created_at": ollama_infos.LIGHTRAG_CREATED_AT,
                                         "message": {
                                             "role": "assistant",
                                             "content": f"\n\nError: {error_msg}",
@@ -628,8 +642,8 @@ class OllamaAPI:
 
                                     # Send final message to close the stream
                                     final_data = {
-                                        "model": self.ollama_server_infos.LIGHTRAG_MODEL,
-                                        "created_at": self.ollama_server_infos.LIGHTRAG_CREATED_AT,
+                                        "model": ollama_infos.LIGHTRAG_MODEL,
+                                        "created_at": ollama_infos.LIGHTRAG_CREATED_AT,
                                         "message": {
                                             "role": "assistant",
                                             "content": "",
@@ -648,8 +662,8 @@ class OllamaAPI:
                                 eval_time = last_chunk_time - first_chunk_time
 
                                 data = {
-                                    "model": self.ollama_server_infos.LIGHTRAG_MODEL,
-                                    "created_at": self.ollama_server_infos.LIGHTRAG_CREATED_AT,
+                                    "model": ollama_infos.LIGHTRAG_MODEL,
+                                    "created_at": ollama_infos.LIGHTRAG_CREATED_AT,
                                     "message": {
                                         "role": "assistant",
                                         "content": "",
@@ -689,16 +703,16 @@ class OllamaAPI:
                     )
                     if match_result or mode == SearchMode.bypass:
                         if request.system:
-                            self.rag.llm_model_kwargs["system_prompt"] = request.system
+                            rag.llm_model_kwargs["system_prompt"] = request.system
 
-                        response_text = await self.rag.llm_model_func(
+                        response_text = await rag.llm_model_func(
                             cleaned_query,
                             stream=False,
                             history_messages=conversation_history,
-                            **self.rag.llm_model_kwargs,
+                            **rag.llm_model_kwargs,
                         )
                     else:
-                        response_text = await self.rag.aquery(
+                        response_text = await rag.aquery(
                             cleaned_query, param=query_param
                         )
 
@@ -713,8 +727,8 @@ class OllamaAPI:
                     eval_time = last_chunk_time - first_chunk_time
 
                     return {
-                        "model": self.ollama_server_infos.LIGHTRAG_MODEL,
-                        "created_at": self.ollama_server_infos.LIGHTRAG_CREATED_AT,
+                        "model": ollama_infos.LIGHTRAG_MODEL,
+                        "created_at": ollama_infos.LIGHTRAG_CREATED_AT,
                         "message": {
                             "role": "assistant",
                             "content": str(response_text),

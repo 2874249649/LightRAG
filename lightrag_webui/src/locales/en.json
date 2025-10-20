@@ -13,6 +13,11 @@
     "api": "API",
     "projectRepository": "Project Repository",
     "logout": "Logout",
+    "loadingWorkspaces": "Loading workspaces...",
+    "selectWorkspace": "Select workspace",
+    "noWorkspace": "No workspace",
+    "refreshWorkspaces": "Refresh workspaces",
+    "disabled": "Disabled",
     "themeToggle": {
       "switchToLight": "Switch to light theme",
       "switchToDark": "Switch to dark theme"

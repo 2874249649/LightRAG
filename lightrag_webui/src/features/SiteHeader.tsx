@@ -7,8 +7,16 @@ import { useAuthStore } from '@/stores/state'
 import { cn } from '@/lib/utils'
 import { useTranslation } from 'react-i18next'
 import { navigationService } from '@/services/navigation'
-import { ZapIcon, GithubIcon, LogOutIcon } from 'lucide-react'
+import { ZapIcon, GithubIcon, LogOutIcon, RefreshCwIcon } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/Tooltip'
+import { useWorkspaceStore } from '@/stores/workspace'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from '@/components/ui/Select'
 
 interface NavigationTabProps {
   value: string
@@ -57,6 +65,12 @@ function TabsNavigation() {
 export default function SiteHeader() {
   const { t } = useTranslation()
   const { isGuestMode, coreVersion, apiVersion, username, webuiTitle, webuiDescription } = useAuthStore()
+  const workspaces = useWorkspaceStore.use.workspaces()
+  const currentWorkspace = useWorkspaceStore.use.currentWorkspace()
+  const setWorkspace = useWorkspaceStore.use.setWorkspace()
+  const workspaceLoading = useWorkspaceStore.use.loading()
+  const workspaceError = useWorkspaceStore.use.error()
+  const fetchWorkspaces = useWorkspaceStore.use.fetchWorkspaces()
 
   const versionDisplay = (coreVersion && apiVersion)
     ? `${coreVersion}/${apiVersion}`
@@ -64,6 +78,16 @@ export default function SiteHeader() {
 
   const handleLogout = () => {
     navigationService.navigateToLogin();
+  }
+
+  const workspacePlaceholder = workspaceLoading
+    ? t('header.loadingWorkspaces', 'Loading...')
+    : workspaces.length > 0
+      ? t('header.selectWorkspace', 'Select workspace')
+      : t('header.noWorkspace', 'No workspace')
+
+  const handleWorkspaceChange = (value: string) => {
+    setWorkspace(value)
   }
 
   return (
@@ -103,7 +127,49 @@ export default function SiteHeader() {
         )}
       </div>
 
-      <nav className="w-[200px] flex items-center justify-end">
+      <nav className="flex items-center justify-end gap-3 min-w-[260px]">
+        <div className="flex items-center gap-2">
+          <Select
+            value={currentWorkspace ?? undefined}
+            onValueChange={handleWorkspaceChange}
+            disabled={workspaceLoading || workspaces.length === 0}
+          >
+            <SelectTrigger className="h-8 w-48">
+              <SelectValue placeholder={workspacePlaceholder} />
+            </SelectTrigger>
+            <SelectContent>
+              {workspaces.map((workspace) => (
+                <SelectItem
+                  key={workspace.id}
+                  value={workspace.id}
+                  disabled={!workspace.enabled || !!workspace.error}
+                >
+                  <span className="flex flex-col">
+                    <span>{workspace.displayName}</span>
+                    {(workspace.error || !workspace.enabled) && (
+                      <span className="text-xs text-muted-foreground">
+                        {workspace.error ?? t('header.disabled', 'Disabled')}
+                      </span>
+                    )}
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button
+            variant="ghost"
+            size="icon"
+            side="bottom"
+            tooltip={workspaceError ?? t('header.refreshWorkspaces', 'Refresh workspaces')}
+            onClick={() => fetchWorkspaces({ refresh: true })}
+            disabled={workspaceLoading}
+          >
+            <RefreshCwIcon
+              className={cn('size-4', workspaceLoading && 'animate-spin')}
+              aria-hidden="true"
+            />
+          </Button>
+        </div>
         <div className="flex items-center gap-2">
           {versionDisplay && (
             <span className="text-xs text-gray-500 dark:text-gray-400 mr-1">

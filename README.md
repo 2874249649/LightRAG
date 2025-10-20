@@ -928,6 +928,38 @@ maxclients 500
 
 </details>
 
+### Multi-workspace API configuration
+
+The API server can expose multiple isolated workspaces from a single process. At
+startup the server builds a registry of workspaces using one of the following
+sources (checked in order):
+
+1. The `WORKSPACES` environment variable containing a comma-separated list of
+   workspace IDs, for example `WORKSPACES=kb1,kb2,analytics`.
+2. A `workspaces.yaml` file located inside the configured `rag_storage`
+   directory. The schema matches the inline documentation in `env.example` and
+   lets you declare workspace IDs plus optional display metadata:
+
+   ```yaml
+   workspaces:
+     - id: kb1
+       display_name: Customer KB
+       description: Primary customer knowledge base
+     - id: kb2
+       display_name: Product KB
+       enabled: false  # Optional flag to disable a workspace temporarily
+   ```
+
+3. The legacy `WORKSPACE` environment variable (single workspace) when neither
+   of the above is provided.
+
+When the server starts it eagerly creates a `LightRAG` instance for every
+workspace and initializes the associated storage and input directories (for
+local storages this is simply `<INPUT_DIR>/<workspace_id>`). The HTTP API now
+routes every request through `/api/workspaces/{workspace_id}/…`, ensuring that
+document management, queries, graph operations, and Ollama-compatible endpoints
+all operate on the selected workspace.
+
 ### Data Isolation Between LightRAG Instances
 
 The `workspace` parameter ensures data isolation between different LightRAG instances. Once initialized, the `workspace` is immutable and cannot be changed.Here is how workspaces are implemented for different types of storage:

@@ -24,6 +24,16 @@ export type LightragGraphType = {
   edges: LightragEdgeType[]
 }
 
+export type WorkspaceSummary = {
+  id: string
+  display_name?: string | null
+  description?: string | null
+  enabled: boolean
+  error?: string | null
+  pipeline_busy?: boolean | null
+  metadata?: Record<string, any> | null
+}
+
 export type LightragStatus = {
   status: 'healthy'
   working_directory: string
@@ -39,7 +49,6 @@ export type LightragStatus = {
     doc_status_storage: string
     graph_storage: string
     vector_storage: string
-    workspace?: string
     max_graph_nodes?: string
     enable_rerank?: boolean
     rerank_binding?: string | null
@@ -59,7 +68,7 @@ export type LightragStatus = {
   core_version?: string
   api_version?: string
   auth_mode?: 'enabled' | 'disabled'
-  pipeline_busy: boolean
+  pipeline_busy?: boolean
   keyed_locks?: {
     process_id: number
     cleanup_performed: {
@@ -75,6 +84,7 @@ export type LightragStatus = {
   }
   webui_title?: string
   webui_description?: string
+  workspaces?: WorkspaceSummary[]
 }
 
 export type LightragDocumentsScanProgress = {
@@ -310,28 +320,74 @@ axiosInstance.interceptors.response.use(
   }
 )
 
+const WORKSPACE_STORAGE_KEY = 'lightrag-workspaces'
+
+const getPersistedWorkspaceId = (): string | null => {
+  if (typeof window === 'undefined') {
+    return null
+  }
+
+  if (window.__LIGHTRAG_CURRENT_WORKSPACE__ !== undefined) {
+    return window.__LIGHTRAG_CURRENT_WORKSPACE__ ?? null
+  }
+
+  try {
+    const raw = window.localStorage.getItem(WORKSPACE_STORAGE_KEY)
+    if (!raw) {
+      return null
+    }
+    const parsed = JSON.parse(raw)
+    return parsed?.state?.currentWorkspace ?? null
+  } catch (error) {
+    console.error('Failed to read workspace from storage:', error)
+    return null
+  }
+}
+
+const buildWorkspaceUrl = (path: string): string => {
+  const workspaceId = getPersistedWorkspaceId()
+  if (!workspaceId) {
+    throw new Error('Workspace not selected')
+  }
+
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`
+  return `/api/workspaces/${encodeURIComponent(workspaceId)}${normalizedPath}`
+}
+
 // API methods
 export const queryGraphs = async (
   label: string,
   maxDepth: number,
   maxNodes: number
 ): Promise<LightragGraphType> => {
-  const response = await axiosInstance.get(`/graphs?label=${encodeURIComponent(label)}&max_depth=${maxDepth}&max_nodes=${maxNodes}`)
+  const response = await axiosInstance.get(
+    buildWorkspaceUrl(
+      `/graphs?label=${encodeURIComponent(label)}&max_depth=${maxDepth}&max_nodes=${maxNodes}`
+    )
+  )
   return response.data
 }
 
 export const getGraphLabels = async (): Promise<string[]> => {
-  const response = await axiosInstance.get('/graph/label/list')
+  const response = await axiosInstance.get(
+    buildWorkspaceUrl('/graph/label/list')
+  )
   return response.data
 }
 
 export const getPopularLabels = async (limit: number = popularLabelsDefaultLimit): Promise<string[]> => {
-  const response = await axiosInstance.get(`/graph/label/popular?limit=${limit}`)
+  const response = await axiosInstance.get(
+    buildWorkspaceUrl(`/graph/label/popular?limit=${limit}`)
+  )
   return response.data
 }
 
 export const searchLabels = async (query: string, limit: number = searchLabelsDefaultLimit): Promise<string[]> => {
-  const response = await axiosInstance.get(`/graph/label/search?q=${encodeURIComponent(query)}&limit=${limit}`)
+  const response = await axiosInstance.get(
+    buildWorkspaceUrl(
+      `/graph/label/search?q=${encodeURIComponent(query)}&limit=${limit}`
+    )
+  )
   return response.data
 }
 
@@ -339,7 +395,7 @@ export const checkHealth = async (): Promise<
   LightragStatus | { status: 'error'; message: string }
 > => {
   try {
-    const response = await axiosInstance.get('/health')
+    const response = await axiosInstance.get('/api/health')
     return response.data
   } catch (error) {
     return {
@@ -349,28 +405,50 @@ export const checkHealth = async (): Promise<
   }
 }
 
+type WorkspaceFetchOptions = {
+  refresh?: boolean
+}
+
+export const getWorkspaces = async (
+  options?: WorkspaceFetchOptions
+): Promise<WorkspaceSummary[]> => {
+  const response = await axiosInstance.get('/api/workspaces', {
+    params: options?.refresh ? { refresh: true } : undefined
+  })
+  return response.data
+}
+
 export const getDocuments = async (): Promise<DocsStatusesResponse> => {
-  const response = await axiosInstance.get('/documents')
+  const response = await axiosInstance.get(buildWorkspaceUrl('/documents'))
   return response.data
 }
 
 export const scanNewDocuments = async (): Promise<ScanResponse> => {
-  const response = await axiosInstance.post('/documents/scan')
+  const response = await axiosInstance.post(
+    buildWorkspaceUrl('/documents/scan')
+  )
   return response.data
 }
 
 export const reprocessFailedDocuments = async (): Promise<ReprocessFailedResponse> => {
-  const response = await axiosInstance.post('/documents/reprocess_failed')
+  const response = await axiosInstance.post(
+    buildWorkspaceUrl('/documents/reprocess_failed')
+  )
   return response.data
 }
 
 export const getDocumentsScanProgress = async (): Promise<LightragDocumentsScanProgress> => {
-  const response = await axiosInstance.get('/documents/scan-progress')
+  const response = await axiosInstance.get(
+    buildWorkspaceUrl('/documents/scan-progress')
+  )
   return response.data
 }
 
 export const queryText = async (request: QueryRequest): Promise<QueryResponse> => {
-  const response = await axiosInstance.post('/query', request)
+  const response = await axiosInstance.post(
+    buildWorkspaceUrl('/query'),
+    request
+  )
   return response.data
 }
 
@@ -393,11 +471,14 @@ export const queryTextStream = async (
   }
 
   try {
-    const response = await fetch(`${backendBaseUrl}/query/stream`, {
-      method: 'POST',
-      headers: headers,
-      body: JSON.stringify(request),
-    });
+    const response = await fetch(
+      `${backendBaseUrl}${buildWorkspaceUrl('/query/stream')}`,
+      {
+        method: 'POST',
+        headers: headers,
+        body: JSON.stringify(request),
+      }
+    );
 
     if (!response.ok) {
       // Handle 401 Unauthorized error specifically
@@ -417,7 +498,7 @@ export const queryTextStream = async (
       } catch { /* ignore */ }
 
       // Format error message similar to axios interceptor for consistency
-      const url = `${backendBaseUrl}/query/stream`;
+      const url = `${backendBaseUrl}${buildWorkspaceUrl('/query/stream')}`;
       throw new Error(
         `${response.status} ${response.statusText}\n${JSON.stringify(
           { error: errorBody }
@@ -560,12 +641,18 @@ export const queryTextStream = async (
 };
 
 export const insertText = async (text: string): Promise<DocActionResponse> => {
-  const response = await axiosInstance.post('/documents/text', { text })
+  const response = await axiosInstance.post(
+    buildWorkspaceUrl('/documents/text'),
+    { text }
+  )
   return response.data
 }
 
 export const insertTexts = async (texts: string[]): Promise<DocActionResponse> => {
-  const response = await axiosInstance.post('/documents/texts', { texts })
+  const response = await axiosInstance.post(
+    buildWorkspaceUrl('/documents/texts'),
+    { texts }
+  )
   return response.data
 }
 
@@ -576,10 +663,13 @@ export const uploadDocument = async (
   const formData = new FormData()
   formData.append('file', file)
 
-  const response = await axiosInstance.post('/documents/upload', formData, {
-    headers: {
-      'Content-Type': 'multipart/form-data'
-    },
+  const response = await axiosInstance.post(
+    buildWorkspaceUrl('/documents/upload'),
+    formData,
+    {
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      },
     // prettier-ignore
     onUploadProgress:
       onUploadProgress !== undefined
@@ -588,7 +678,8 @@ export const uploadDocument = async (
           onUploadProgress(percentCompleted)
         }
         : undefined
-  })
+    }
+  )
   return response.data
 }
 
@@ -606,7 +697,7 @@ export const batchUploadDocuments = async (
 }
 
 export const clearDocuments = async (): Promise<DocActionResponse> => {
-  const response = await axiosInstance.delete('/documents')
+  const response = await axiosInstance.delete(buildWorkspaceUrl('/documents'))
   return response.data
 }
 
@@ -614,14 +705,20 @@ export const clearCache = async (): Promise<{
   status: 'success' | 'fail'
   message: string
 }> => {
-  const response = await axiosInstance.post('/documents/clear_cache', {})
+  const response = await axiosInstance.post(
+    buildWorkspaceUrl('/documents/clear_cache'),
+    {}
+  )
   return response.data
 }
 
 export const deleteDocuments = async (docIds: string[], deleteFile: boolean = false): Promise<DeleteDocResponse> => {
-  const response = await axiosInstance.delete('/documents/delete_document', {
-    data: { doc_ids: docIds, delete_file: deleteFile }
-  })
+  const response = await axiosInstance.delete(
+    buildWorkspaceUrl('/documents/delete_document'),
+    {
+      data: { doc_ids: docIds, delete_file: deleteFile }
+    }
+  )
   return response.data
 }
 
@@ -683,7 +780,9 @@ export const getAuthStatus = async (): Promise<AuthStatusResponse> => {
 }
 
 export const getPipelineStatus = async (): Promise<PipelineStatusResponse> => {
-  const response = await axiosInstance.get('/documents/pipeline_status')
+  const response = await axiosInstance.get(
+    buildWorkspaceUrl('/documents/pipeline_status')
+  )
   return response.data
 }
 
@@ -713,11 +812,14 @@ export const updateEntity = async (
   updatedData: Record<string, any>,
   allowRename: boolean = false
 ): Promise<DocActionResponse> => {
-  const response = await axiosInstance.post('/graph/entity/edit', {
-    entity_name: entityName,
-    updated_data: updatedData,
-    allow_rename: allowRename
-  })
+  const response = await axiosInstance.post(
+    buildWorkspaceUrl('/graph/entity/edit'),
+    {
+      entity_name: entityName,
+      updated_data: updatedData,
+      allow_rename: allowRename
+    }
+  )
   return response.data
 }
 
@@ -733,11 +835,14 @@ export const updateRelation = async (
   targetEntity: string,
   updatedData: Record<string, any>
 ): Promise<DocActionResponse> => {
-  const response = await axiosInstance.post('/graph/relation/edit', {
-    source_id: sourceEntity,
-    target_id: targetEntity,
-    updated_data: updatedData
-  })
+  const response = await axiosInstance.post(
+    buildWorkspaceUrl('/graph/relation/edit'),
+    {
+      source_id: sourceEntity,
+      target_id: targetEntity,
+      updated_data: updatedData
+    }
+  )
   return response.data
 }
 
@@ -748,7 +853,9 @@ export const updateRelation = async (
  */
 export const checkEntityNameExists = async (entityName: string): Promise<boolean> => {
   try {
-    const response = await axiosInstance.get(`/graph/entity/exists?name=${encodeURIComponent(entityName)}`)
+    const response = await axiosInstance.get(
+      buildWorkspaceUrl(`/graph/entity/exists?name=${encodeURIComponent(entityName)}`)
+    )
     return response.data.exists
   } catch (error) {
     console.error('Error checking entity name:', error)
@@ -762,7 +869,9 @@ export const checkEntityNameExists = async (entityName: string): Promise<boolean
  * @returns Promise with the track status response containing documents and summary
  */
 export const getTrackStatus = async (trackId: string): Promise<TrackStatusResponse> => {
-  const response = await axiosInstance.get(`/documents/track_status/${encodeURIComponent(trackId)}`)
+  const response = await axiosInstance.get(
+    buildWorkspaceUrl(`/documents/track_status/${encodeURIComponent(trackId)}`)
+  )
   return response.data
 }
 
@@ -772,7 +881,10 @@ export const getTrackStatus = async (trackId: string): Promise<TrackStatusRespon
  * @returns Promise with paginated documents response
  */
 export const getDocumentsPaginated = async (request: DocumentsRequest): Promise<PaginatedDocsResponse> => {
-  const response = await axiosInstance.post('/documents/paginated', request)
+  const response = await axiosInstance.post(
+    buildWorkspaceUrl('/documents/paginated'),
+    request
+  )
   return response.data
 }
 
@@ -781,6 +893,8 @@ export const getDocumentsPaginated = async (request: DocumentsRequest): Promise<
  * @returns Promise with status counts response
  */
 export const getDocumentStatusCounts = async (): Promise<StatusCountsResponse> => {
-  const response = await axiosInstance.get('/documents/status_counts')
+  const response = await axiosInstance.get(
+    buildWorkspaceUrl('/documents/status_counts')
+  )
   return response.data
 }

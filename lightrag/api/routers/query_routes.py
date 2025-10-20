@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Literal, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from lightrag.base import QueryParam
 from lightrag.api.utils_api import get_combined_auth_dependency
+from lightrag.api.workspaces import get_current_workspace
 from pydantic import BaseModel, Field, field_validator
 
 from ascii_colors import trace_exception
@@ -164,7 +165,7 @@ class StreamChunkResponse(BaseModel):
     )
 
 
-def create_query_routes(rag, api_key: Optional[str] = None, top_k: int = 60):
+def create_query_routes(api_key: Optional[str] = None, top_k: int = 60):
     combined_auth = get_combined_auth_dependency(api_key)
 
     @router.post(
@@ -337,6 +338,7 @@ def create_query_routes(rag, api_key: Optional[str] = None, top_k: int = 60):
                 - 500: Internal processing error (e.g., LLM service unavailable)
         """
         try:
+            rag = get_current_workspace().rag
             param = request.to_query_params(
                 False
             )  # Ensure stream=False for non-streaming endpoint
@@ -556,6 +558,7 @@ def create_query_routes(rag, api_key: Optional[str] = None, top_k: int = 60):
             Use streaming mode for real-time interfaces and non-streaming for batch processing.
         """
         try:
+            rag = get_current_workspace().rag
             # Use the stream parameter from the request, defaulting to True if not specified
             stream_mode = request.stream if request.stream is not None else True
             param = request.to_query_params(stream_mode)
@@ -1001,6 +1004,7 @@ def create_query_routes(rag, api_key: Optional[str] = None, top_k: int = 60):
             as structured data analysis typically requires source attribution.
         """
         try:
+            rag = get_current_workspace().rag
             param = request.to_query_params(False)  # No streaming for data endpoint
             response = await rag.aquery_data(request.query, param=param)
 

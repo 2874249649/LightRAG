@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Query, HTTPException
 from pydantic import BaseModel, Field
 
 from lightrag.utils import logger
+from lightrag.api.workspaces import get_current_workspace
 from ..utils_api import get_combined_auth_dependency
 
 router = APIRouter(tags=["graph"])
@@ -85,8 +86,11 @@ class RelationCreateRequest(BaseModel):
     )
 
 
-def create_graph_routes(rag, api_key: Optional[str] = None):
+def create_graph_routes(api_key: Optional[str] = None):
     combined_auth = get_combined_auth_dependency(api_key)
+
+    def _rag():
+        return get_current_workspace().rag
 
     @router.get("/graph/label/list", dependencies=[Depends(combined_auth)])
     async def get_graph_labels():
@@ -97,6 +101,7 @@ def create_graph_routes(rag, api_key: Optional[str] = None):
             List[str]: List of graph labels
         """
         try:
+            rag = _rag()
             return await rag.get_graph_labels()
         except Exception as e:
             logger.error(f"Error getting graph labels: {str(e)}")
@@ -121,6 +126,7 @@ def create_graph_routes(rag, api_key: Optional[str] = None):
             List[str]: List of popular labels sorted by degree (highest first)
         """
         try:
+            rag = _rag()
             return await rag.chunk_entity_relation_graph.get_popular_labels(limit)
         except Exception as e:
             logger.error(f"Error getting popular labels: {str(e)}")
@@ -147,6 +153,7 @@ def create_graph_routes(rag, api_key: Optional[str] = None):
             List[str]: List of matching labels sorted by relevance
         """
         try:
+            rag = _rag()
             return await rag.chunk_entity_relation_graph.search_labels(q, limit)
         except Exception as e:
             logger.error(f"Error searching labels with query '{q}': {str(e)}")
@@ -176,6 +183,7 @@ def create_graph_routes(rag, api_key: Optional[str] = None):
             Dict[str, List[str]]: Knowledge graph for label
         """
         try:
+            rag = _rag()
             # Log the label parameter to check for leading spaces
             logger.debug(
                 f"get_knowledge_graph called with label: '{label}' (length: {len(label)}, repr: {repr(label)})"
@@ -207,6 +215,7 @@ def create_graph_routes(rag, api_key: Optional[str] = None):
             Dict[str, bool]: Dictionary with 'exists' key indicating if entity exists
         """
         try:
+            rag = _rag()
             exists = await rag.chunk_entity_relation_graph.has_node(name)
             return {"exists": exists}
         except Exception as e:
@@ -228,6 +237,7 @@ def create_graph_routes(rag, api_key: Optional[str] = None):
             Dict: Updated entity information
         """
         try:
+            rag = _rag()
             result = await rag.aedit_entity(
                 entity_name=request.entity_name,
                 updated_data=request.updated_data,
@@ -261,6 +271,7 @@ def create_graph_routes(rag, api_key: Optional[str] = None):
             Dict: Updated relation information
         """
         try:
+            rag = _rag()
             result = await rag.aedit_relation(
                 source_entity=request.source_id,
                 target_entity=request.target_id,
@@ -329,6 +340,7 @@ def create_graph_routes(rag, api_key: Optional[str] = None):
             }
         """
         try:
+            rag = _rag()
             # Use the proper acreate_entity method which handles:
             # - Graph lock for concurrency
             # - Vector embedding creation in entities_vdb
@@ -411,6 +423,7 @@ def create_graph_routes(rag, api_key: Optional[str] = None):
             }
         """
         try:
+            rag = _rag()
             # Use the proper acreate_relation method which handles:
             # - Graph lock for concurrency
             # - Entity existence validation
@@ -500,6 +513,7 @@ def create_graph_routes(rag, api_key: Optional[str] = None):
             - This operation cannot be undone, so verify entity names before merging
         """
         try:
+            rag = _rag()
             result = await rag.amerge_entities(
                 source_entities=request.entities_to_change,
                 target_entity=request.entity_to_change_into,

@@ -10,6 +10,8 @@ import { getAuthStatus } from '@/api/lightrag'
 import SiteHeader from '@/features/SiteHeader'
 import { InvalidApiKeyError, RequireApiKeError } from '@/api/lightrag'
 import { ZapIcon } from 'lucide-react'
+import { useWorkspaceStore } from '@/stores/workspace'
+import Button from '@/components/ui/Button'
 
 import GraphViewer from '@/features/GraphViewer'
 import DocumentManager from '@/features/DocumentManager'
@@ -24,6 +26,11 @@ function App() {
   const currentTab = useSettingsStore.use.currentTab()
   const [apiKeyAlertOpen, setApiKeyAlertOpen] = useState(false)
   const [initializing, setInitializing] = useState(true) // Add initializing state
+  const currentWorkspace = useWorkspaceStore.use.currentWorkspace()
+  const workspaceLoading = useWorkspaceStore.use.loading()
+  const workspaceError = useWorkspaceStore.use.error()
+  const fetchWorkspaces = useWorkspaceStore.use.fetchWorkspaces()
+  const workspaces = useWorkspaceStore.use.workspaces()
   const versionCheckRef = useRef(false); // Prevent duplicate calls in Vite dev mode
   const healthCheckInitializedRef = useRef(false); // Prevent duplicate health checks in Vite dev mode
 
@@ -71,7 +78,7 @@ function App() {
     // Set health check function in the store
     useBackendState.getState().setHealthCheckFunction(performHealthCheck);
 
-    if (!enableHealthCheck || apiKeyAlertOpen) {
+    if (!enableHealthCheck || apiKeyAlertOpen || workspaceLoading || !currentWorkspace) {
       useBackendState.getState().clearHealthCheckTimer();
       return;
     }
@@ -89,7 +96,7 @@ function App() {
     return () => {
       useBackendState.getState().clearHealthCheckTimer();
     };
-  }, [enableHealthCheck, apiKeyAlertOpen]);
+  }, [enableHealthCheck, apiKeyAlertOpen, workspaceLoading, currentWorkspace]);
 
   // Version check - independent and executed only once
   useEffect(() => {
@@ -137,8 +144,18 @@ function App() {
 
         // Set flag to indicate version info has been checked
         sessionStorage.setItem('VERSION_CHECKED_FROM_LOGIN', 'true');
+        try {
+          await fetchWorkspaces()
+        } catch (error) {
+          console.error('Failed to load workspaces:', error)
+        }
       } catch (error) {
         console.error('Failed to get version info:', error);
+        try {
+          await fetchWorkspaces()
+        } catch (workspaceError) {
+          console.error('Failed to load workspaces:', workspaceError)
+        }
       } finally {
         // Ensure initializing is set to false even if there's an error
         setInitializing(false);
@@ -165,7 +182,7 @@ function App() {
   return (
     <ThemeProvider>
       <TabVisibilityProvider>
-        {initializing ? (
+        {initializing || workspaceLoading ? (
           // Loading state while initializing with simplified header
           <div className="flex h-screen w-screen flex-col">
             {/* Simplified header during initialization - matches SiteHeader structure */}
@@ -188,9 +205,31 @@ function App() {
 
             {/* Loading indicator in content area */}
             <div className="flex flex-1 items-center justify-center">
-              <div className="text-center">
-                <div className="mb-2 h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent mx-auto"></div>
-                <p>Initializing...</p>
+                <div className="text-center">
+                  <div className="mb-2 h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent mx-auto"></div>
+                  <p>Initializing...</p>
+                </div>
+              </div>
+            </div>
+        ) : !currentWorkspace ? (
+          <div className="flex h-screen w-screen flex-col">
+            <SiteHeader />
+            <div className="flex flex-1 items-center justify-center px-6">
+              <div className="text-center max-w-md space-y-4">
+                <h1 className="text-xl font-semibold">No workspace available</h1>
+                <p className="text-muted-foreground">
+                  {workspaceError
+                    ? workspaceError
+                    : workspaces.length === 0
+                      ? 'No workspaces were found on the server. Please configure a workspace and refresh.'
+                      : 'The current workspace is disabled or unavailable. Please select another workspace.'}
+                </p>
+                <Button
+                  variant="outline"
+                  onClick={() => fetchWorkspaces({ refresh: true })}
+                >
+                  Retry
+                </Button>
               </div>
             </div>
           </div>
@@ -205,16 +244,16 @@ function App() {
               <SiteHeader />
               <div className="relative grow">
                 <TabsContent value="documents" className="absolute top-0 right-0 bottom-0 left-0 overflow-auto">
-                  <DocumentManager />
+                  <DocumentManager key={currentWorkspace ?? 'no-workspace'} />
                 </TabsContent>
                 <TabsContent value="knowledge-graph" className="absolute top-0 right-0 bottom-0 left-0 overflow-hidden">
-                  <GraphViewer />
+                  <GraphViewer key={currentWorkspace ?? 'no-workspace'} />
                 </TabsContent>
                 <TabsContent value="retrieval" className="absolute top-0 right-0 bottom-0 left-0 overflow-hidden">
-                  <RetrievalTesting />
+                  <RetrievalTesting key={currentWorkspace ?? 'no-workspace'} />
                 </TabsContent>
                 <TabsContent value="api" className="absolute top-0 right-0 bottom-0 left-0 overflow-hidden">
-                  <ApiSite />
+                  <ApiSite key={currentWorkspace ?? 'no-workspace'} />
                 </TabsContent>
               </div>
             </Tabs>

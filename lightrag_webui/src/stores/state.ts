@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { createSelectors } from '@/lib/utils'
 import { checkHealth, LightragStatus } from '@/api/lightrag'
 import { useSettingsStore } from './settings'
+import { useWorkspaceStore } from './workspace'
 import { healthCheckInterval } from '@/lib/constants'
 
 interface BackendState {
@@ -89,13 +90,22 @@ const useBackendStateStoreBase = create<BackendState>()((set, get) => ({
         }
       }
 
+      if (health.workspaces) {
+        useWorkspaceStore.getState().hydrateFromHealth(health.workspaces)
+      }
+
+      const currentWorkspaceId = useWorkspaceStore.getState().currentWorkspace
+      const pipelineBusyForWorkspace = currentWorkspaceId
+        ? health.workspaces?.find((ws) => ws.id === currentWorkspaceId)?.pipeline_busy ?? false
+        : false
+
       set({
         health: true,
         message: null,
         messageTitle: null,
         lastCheckTime: Date.now(),
         status: health,
-        pipelineBusy: health.pipeline_busy
+        pipelineBusy: pipelineBusyForWorkspace
       })
       return true
     }
@@ -104,7 +114,8 @@ const useBackendStateStoreBase = create<BackendState>()((set, get) => ({
       message: health.message,
       messageTitle: 'Backend Health Check Error!',
       lastCheckTime: Date.now(),
-      status: null
+      status: null,
+      pipelineBusy: false
     })
     return false
   },
@@ -118,6 +129,12 @@ const useBackendStateStoreBase = create<BackendState>()((set, get) => ({
   },
 
   setPipelineBusy: (busy: boolean) => {
+    const workspaceId = useWorkspaceStore.getState().currentWorkspace
+    if (workspaceId) {
+      useWorkspaceStore.getState().updateWorkspaceStatus(workspaceId, {
+        pipelineBusy: busy
+      })
+    }
     set({ pipelineBusy: busy })
   },
 

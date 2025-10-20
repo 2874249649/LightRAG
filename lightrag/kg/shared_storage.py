@@ -1054,12 +1054,28 @@ def initialize_share_data(workers: int = 1):
     _initialized = True
 
 
-async def initialize_pipeline_status():
+def resolve_pipeline_namespace(workspace: str | None = None) -> str:
+    """
+    Build the namespace key used for pipeline status storage.
+
+    Args:
+        workspace: Workspace identifier. Empty/None maps to the legacy default namespace.
+
+    Returns:
+        str: Namespace key for the workspace-specific pipeline status.
+    """
+    if workspace:
+        return f"pipeline_status:{workspace}"
+    return "pipeline_status"
+
+
+async def initialize_pipeline_status(workspace: str | None = None):
     """
     Initialize pipeline namespace with default values.
     This function is called during FASTAPI lifespan for each worker.
     """
-    pipeline_namespace = await get_namespace_data("pipeline_status", first_init=True)
+    namespace = resolve_pipeline_namespace(workspace)
+    pipeline_namespace = await get_namespace_data(namespace, first_init=True)
 
     async with get_internal_lock():
         # Check if already initialized by checking for required fields

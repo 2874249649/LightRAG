@@ -56,6 +56,7 @@ from lightrag.kg import (
 from lightrag.kg.shared_storage import (
     get_namespace_data,
     get_pipeline_status_lock,
+    resolve_pipeline_namespace,
     get_graph_db_lock,
     get_data_init_lock,
 )
@@ -1372,7 +1373,9 @@ class LightRAG:
         """
 
         # Get pipeline status shared data and lock
-        pipeline_status = await get_namespace_data("pipeline_status")
+        pipeline_status = await get_namespace_data(
+            resolve_pipeline_namespace(self.workspace)
+        )
         pipeline_status_lock = get_pipeline_status_lock()
 
         # Check if another process is already processing the queue
@@ -2612,7 +2615,9 @@ class LightRAG:
         original_exception = None
 
         # Get pipeline status shared data and lock for status updates
-        pipeline_status = await get_namespace_data("pipeline_status")
+        pipeline_status = await get_namespace_data(
+            resolve_pipeline_namespace(self.workspace)
+        )
         pipeline_status_lock = get_pipeline_status_lock()
 
         async with pipeline_status_lock:
