@@ -65,12 +65,12 @@ function TabsNavigation() {
 export default function SiteHeader() {
   const { t } = useTranslation()
   const { isGuestMode, coreVersion, apiVersion, username, webuiTitle, webuiDescription } = useAuthStore()
-  const workspaces = useWorkspaceStore.use.workspaces()
-  const currentWorkspace = useWorkspaceStore.use.currentWorkspace()
-  const setWorkspace = useWorkspaceStore.use.setWorkspace()
-  const workspaceLoading = useWorkspaceStore.use.loading()
-  const workspaceError = useWorkspaceStore.use.error()
-  const fetchWorkspaces = useWorkspaceStore.use.fetchWorkspaces()
+  const workspaces = useWorkspaceStore((state) => state.workspaces)
+  const currentWorkspace = useWorkspaceStore((state) => state.currentWorkspace)
+  const setWorkspace = useWorkspaceStore((state) => state.setWorkspace)
+  const workspaceLoading = useWorkspaceStore((state) => state.loading)
+  const workspaceError = useWorkspaceStore((state) => state.error)
+  const fetchWorkspaces = useWorkspaceStore((state) => state.fetchWorkspaces)
 
   const versionDisplay = (coreVersion && apiVersion)
     ? `${coreVersion}/${apiVersion}`

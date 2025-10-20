@@ -124,7 +124,7 @@ const GraphViewer = () => {
   const enableNodeDrag = useSettingsStore.use.enableNodeDrag()
   const showLegend = useSettingsStore.use.showLegend()
   const theme = useSettingsStore.use.theme()
-  const currentWorkspace = useWorkspaceStore.use.currentWorkspace()
+  const currentWorkspace = useWorkspaceStore((state) => state.currentWorkspace)
 
   // Memoize sigma settings to prevent unnecessary re-creation
   const memoizedSigmaSettings = useMemo(() => {

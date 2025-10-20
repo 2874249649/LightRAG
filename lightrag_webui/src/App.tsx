@@ -26,11 +26,11 @@ function App() {
   const currentTab = useSettingsStore.use.currentTab()
   const [apiKeyAlertOpen, setApiKeyAlertOpen] = useState(false)
   const [initializing, setInitializing] = useState(true) // Add initializing state
-  const currentWorkspace = useWorkspaceStore.use.currentWorkspace()
-  const workspaceLoading = useWorkspaceStore.use.loading()
-  const workspaceError = useWorkspaceStore.use.error()
-  const fetchWorkspaces = useWorkspaceStore.use.fetchWorkspaces()
-  const workspaces = useWorkspaceStore.use.workspaces()
+  const currentWorkspace = useWorkspaceStore((state) => state.currentWorkspace)
+  const workspaceLoading = useWorkspaceStore((state) => state.loading)
+  const workspaceError = useWorkspaceStore((state) => state.error)
+  const fetchWorkspaces = useWorkspaceStore((state) => state.fetchWorkspaces)
+  const workspaces = useWorkspaceStore((state) => state.workspaces)
   const versionCheckRef = useRef(false); // Prevent duplicate calls in Vite dev mode
   const healthCheckInitializedRef = useRef(false); // Prevent duplicate health checks in Vite dev mode
 
