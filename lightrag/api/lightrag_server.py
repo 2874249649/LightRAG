@@ -349,11 +349,9 @@ def create_app(args):
         "redoc_url": "/redoc",  # Explicitly set redoc URL
     }
 
-    # Add custom validation error handler for /query/data endpoint
-    @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(
         request: Request, exc: RequestValidationError
-    ):
+    ) -> JSONResponse:
         # Check if this is a request to /query/data endpoint
         if request.url.path.endswith("/query/data"):
             # Extract error details
@@ -387,20 +385,8 @@ def create_app(args):
             return ["*"]
         return [origin.strip() for origin in origins_str.split(",")]
 
-    # Add CORS middleware
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=get_cors_origins(),
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
-
     # Create combined auth dependency for all endpoints
     combined_auth = get_combined_auth_dependency(api_key)
-
-    # Create working directory if it doesn't exist
-    Path(args.working_dir).mkdir(parents=True, exist_ok=True)
 
     def create_optimized_openai_llm_func(
         config_cache: LLMConfigCache, args, llm_timeout: int
@@ -801,6 +787,14 @@ def create_app(args):
     }
 
     app = FastAPI(**app_kwargs)
+    app.add_exception_handler(RequestValidationError, validation_exception_handler)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=get_cors_origins(),
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
     workspace_prefix = "/api/workspaces/{workspace_id}"
 
