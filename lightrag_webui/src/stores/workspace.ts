@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
-import { createSelectors, errorMessage } from '@/lib/utils'
+import { errorMessage } from '@/lib/utils'
 import { getWorkspaces as fetchWorkspacesApi } from '@/api/lightrag'
 
 declare global {
@@ -71,7 +71,7 @@ const syncWorkspaceId = (workspaceId: string | null) => {
   }
 }
 
-const useWorkspaceStoreBase = create<WorkspaceState>()(
+export const useWorkspaceStore = create<WorkspaceState>()(
   persist(
     (set, get) => ({
       workspaces: [],
@@ -191,7 +191,3 @@ const useWorkspaceStoreBase = create<WorkspaceState>()(
     }
   )
 )
-
-const useWorkspaceStore = createSelectors(useWorkspaceStoreBase)
-
-export { useWorkspaceStore }
