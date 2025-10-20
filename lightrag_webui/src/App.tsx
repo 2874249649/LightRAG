@@ -223,15 +223,7 @@ function App() {
 
               <div className="flex h-10 flex-1 items-center justify-center" />
 
-              <nav className="w-[200px] flex items-center justify-end">
-                <div className="flex items-center gap-2">
-                  <Button variant="ghost" size="icon" side="bottom" tooltip={t('header.projectRepository')}>
-                    <a href={SiteInfo.github} target="_blank" rel="noopener noreferrer">
-                      <GithubIcon className="size-4" aria-hidden="true" />
-                    </a>
-                  </Button>
-                </div>
-              </nav>
+              <nav className="w-[200px] flex items-center justify-end" />
             </header>
             <div className="flex flex-1 items-center justify-center px-6">
               <div className="text-center max-w-md space-y-4">
