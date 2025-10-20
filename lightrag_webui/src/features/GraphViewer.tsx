@@ -23,6 +23,7 @@ import LegendButton from '@/components/graph/LegendButton'
 
 import { useSettingsStore } from '@/stores/settings'
 import { useGraphStore } from '@/stores/graph'
+import { useWorkspaceStore } from '@/stores/workspace'
 import { labelColorDarkTheme, labelColorLightTheme } from '@/lib/constants'
 
 import '@react-sigma/core/lib/style.css'
@@ -111,6 +112,7 @@ const GraphViewer = () => {
   const [isThemeSwitching, setIsThemeSwitching] = useState(false)
   const sigmaRef = useRef<any>(null)
   const prevTheme = useRef<string>('')
+  const prevWorkspaceRef = useRef<string | null>(null)
 
   const selectedNode = useGraphStore.use.selectedNode()
   const focusedNode = useGraphStore.use.focusedNode()
@@ -122,6 +124,7 @@ const GraphViewer = () => {
   const enableNodeDrag = useSettingsStore.use.enableNodeDrag()
   const showLegend = useSettingsStore.use.showLegend()
   const theme = useSettingsStore.use.theme()
+  const currentWorkspace = useWorkspaceStore.use.currentWorkspace()
 
   // Memoize sigma settings to prevent unnecessary re-creation
   const memoizedSigmaSettings = useMemo(() => {
@@ -258,3 +261,22 @@ const GraphViewer = () => {
 }
 
 export default GraphViewer
+  useEffect(() => {
+    if (!currentWorkspace) {
+      prevWorkspaceRef.current = null
+      return
+    }
+
+    if (prevWorkspaceRef.current && prevWorkspaceRef.current !== currentWorkspace) {
+      const state = useGraphStore.getState()
+      state.reset()
+      state.setGraphDataFetchAttempted(false)
+      state.setLabelsFetchAttempted(false)
+      state.setTypeColorMap(new Map<string, string>())
+      state.setLastSuccessfulQueryLabel('')
+      state.setGraphIsEmpty(false)
+      state.incrementGraphDataVersion()
+    }
+
+    prevWorkspaceRef.current = currentWorkspace
+  }, [currentWorkspace])
